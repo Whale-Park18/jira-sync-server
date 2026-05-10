@@ -1,0 +1,14 @@
+services:
+  jira-sync-server:
+    build: .
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+    volumes:
+      - ${JIRA_SYNC_DIR:-../jira-sync}:/jira-sync:ro
+      - sync_data:/app/data
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  sync_data:
