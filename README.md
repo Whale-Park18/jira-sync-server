@@ -25,9 +25,20 @@ jira-sync/.env (볼륨 마운트 → /config/.env)
 
 jira-sync-server의 `.env`에는 서버 설정만 있고, Jira/Notion 자격증명은 jira-sync의 `.env`에서만 관리합니다.
 
+## 구성
+
+```
+브라우저
+    → Caddy (80/443, 자동 TLS)
+        → jira-sync-server (FastAPI, 내부 포트)
+```
+
+Caddy가 리버스 프록시 역할을 하며 Let's Encrypt 인증서를 자동 발급·갱신합니다.
+
 ## 사전 요구사항
 
 - Docker, Docker Compose
+- 외부에서 접근 가능한 도메인 (DuckDNS 등)
 - lm2 호스트에 [jira-sync](https://github.com/Whale-Park18/jira-sync) 클론 및 설정 완료
 
 ### jira-sync 설정 (lm2에서)
@@ -57,6 +68,7 @@ jira-sync-server/
 │   │   └── pages.py     # /, /login, /logout
 │   └── templates/       # Jinja2 HTML 템플릿
 ├── data/                # 동기화 상태 파일 저장 (볼륨 마운트)
+├── Caddyfile            # Caddy 리버스 프록시 설정
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -77,7 +89,8 @@ cp .env.example .env
 # 서버 설정
 SERVER_PASSWORD=your-secure-password
 SECRET_KEY=your-random-64-char-string
-PORT=8000
+APP_PORT=8000
+DOMAIN=your-domain.example.com
 
 # lm2 호스트에서 jira-sync 디렉토리의 절대 경로
 # .env와 sync_config.yaml이 이 안에 있어야 합니다
@@ -95,7 +108,10 @@ JIRA_SYNC_DIR=/home/user/jira-sync
 docker compose up --build -d
 ```
 
-브라우저에서 `http://lm2-ip:8000` 접속 후 비밀번호 입력.
+브라우저에서 `https://<DOMAIN>` 접속 후 비밀번호 입력.
+
+> 최초 기동 시 Caddy가 Let's Encrypt 인증서를 자동 발급합니다.  
+> 도메인이 lm2의 공인 IP로 연결되어 있어야 합니다.
 
 ### 로그 확인
 
