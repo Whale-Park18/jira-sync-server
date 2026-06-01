@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}로그인 — Jira Sync{% endblock %}
+
+{% block extra_styles %}
+h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; }
+p.sub { color: var(--text-sub); font-size: .9rem; margin-bottom: 28px; }
+
+label { display: block; font-size: .875rem; font-weight: 500; margin-bottom: 6px; }
+
+input[type="password"] {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color .2s;
+}
+input[type="password"]:focus { border-color: var(--primary); }
+
+.error-msg {
+  color: var(--error);
+  font-size: .85rem;
+  margin-top: 8px;
+}
+
+button[type="submit"] {
+  margin-top: 24px;
+  width: 100%;
+  padding: 13px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s;
+}
+button[type="submit"]:hover { background: var(--primary-hover); }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Jira → Notion 동기화</h1>
+  <p class="sub">계속하려면 비밀번호를 입력하세요.</p>
+
+  <form method="post" action="/login">
+    <label for="password">비밀번호</label>
+    <input type="password" id="password" name="password" autofocus required>
+    {% if error %}
+    <p class="error-msg">비밀번호가 올바르지 않습니다.</p>
+    {% endif %}
+    <button type="submit">로그인</button>
+  </form>
+</div>
+{% endblock %}

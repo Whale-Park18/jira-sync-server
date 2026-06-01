@@ -1,14 +1,24 @@
 services:
   jira-sync-server:
     build: .
-    ports:
-      - "${SERVER_PORT:-8000}:8000"
+    env_file: .env
     volumes:
-      - ${JIRA_SYNC_DIR:-../jira-sync}:/jira-sync:ro
-      - sync_data:/app/data
-    env_file:
-      - .env
+      - ${JIRA_SYNC_DIR}:/config:ro
+      - ./data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:alpine
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
     restart: unless-stopped
 
 volumes:
-  sync_data:
+  caddy_data:
+  caddy_config:

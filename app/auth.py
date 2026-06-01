@@ -1,35 +1,40 @@
-import os
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-from fastapi import Cookie, HTTPException
-from fastapi.responses import RedirectResponse
+import secrets
 
-_SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
-_PASSWORD = os.environ.get("SERVER_PASSWORD", "")
-_COOKIE_NAME = "session"
-_SESSION_MAX_AGE = 60 * 60 * 24  # 24 hours
+from fastapi import Request, Response
+from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
 
-_serializer = URLSafeTimedSerializer(_SECRET_KEY)
+from app.config import settings
 
 
-def check_password(password: str) -> bool:
-    return _PASSWORD and password == _PASSWORD
+def _signer() -> TimestampSigner:
+    return TimestampSigner(settings.secret_key)
 
 
-def create_session_token() -> str:
-    return _serializer.dumps("authenticated")
+def check_password(plain: str) -> bool:
+    return secrets.compare_digest(plain, settings.server_password)
 
 
-def verify_session(session: str | None = Cookie(default=None, alias=_COOKIE_NAME)) -> bool:
-    if not session:
+def sign_session_cookie(response: Response) -> None:
+    token = _signer().sign("authenticated").decode()
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.session_max_age,
+    )
+
+
+def delete_session_cookie(response: Response) -> None:
+    response.delete_cookie(key=settings.session_cookie_name)
+
+
+def is_authenticated(request: Request) -> bool:
+    token = request.cookies.get(settings.session_cookie_name)
+    if not token:
         return False
     try:
-        _serializer.loads(session, max_age=_SESSION_MAX_AGE)
+        _signer().unsign(token, max_age=settings.session_max_age)
         return True
-    except (BadSignature, SignatureExpired):
+    except (SignatureExpired, BadSignature):
         return False
-
-
-def require_auth(session: str | None = Cookie(default=None, alias=_COOKIE_NAME)) -> str:
-    if not verify_session(session):
-        raise HTTPException(status_code=302, headers={"Location": "/login"})
-    return session

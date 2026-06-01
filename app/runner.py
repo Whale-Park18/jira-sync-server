@@ -1,87 +1,100 @@
 import asyncio
 import json
 import os
-import sys
+import tempfile
+from asyncio.subprocess import PIPE, STDOUT
 from datetime import datetime, timezone
-from pathlib import Path
 
-STATE_FILE = Path("/app/data/state.json")
-_lock = asyncio.Lock()
+from dotenv import dotenv_values
 
-_SYNC_SCRIPT = os.environ.get("JIRA_SYNC_SCRIPT", "/jira-sync/sync.py")
-_SYNC_CONFIG = os.environ.get("JIRA_SYNC_CONFIG", "/jira-sync/sync_config.yaml")
+from app.config import settings
 
-_PASS_THROUGH_VARS = [
-    "JIRA_URL",
-    "JIRA_EMAIL",
-    "JIRA_API_TOKEN",
-    "JIRA_DB_QUERY",
-    "NOTION_API_KEY",
-    "NOTION_DATA_SOURCE_ID",
-]
+_DEFAULT_STATE = {
+    "status": "idle",
+    "started_at": None,
+    "finished_at": None,
+    "last_lines": [],
+    "exit_code": None,
+}
 
 
-def _read_state() -> dict:
-    if STATE_FILE.exists():
+class SyncRunner:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._state: dict = self._load_state()
+        if self._state["status"] == "running":
+            self._state["status"] = "error"
+            self._state["last_lines"].append("[서버 재시작으로 인해 동기화가 중단되었습니다]")
+            self._save_state()
+
+    def _load_state(self) -> dict:
         try:
-            return json.loads(STATE_FILE.read_text())
+            with open(settings.state_file_path, encoding="utf-8") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return dict(_DEFAULT_STATE)
+
+    def _save_state(self) -> None:
+        path = settings.state_file_path
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                json.dump(self._state, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, path)
         except Exception:
-            pass
-    return {"last_sync_time": None, "status": None, "message": None, "is_syncing": False}
+            os.unlink(tmp_path)
+            raise
 
+    def get_status(self) -> dict:
+        return dict(self._state)
 
-def _write_state(state: dict) -> None:
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False))
+    def is_running(self) -> bool:
+        return self._state["status"] == "running"
 
-
-async def get_status() -> dict:
-    state = _read_state()
-    state["is_syncing"] = _lock.locked()
-    return state
-
-
-async def run_sync() -> None:
-    if _lock.locked():
-        return
-
-    async with _lock:
-        state = _read_state()
-        state["is_syncing"] = True
-        _write_state(state)
-
-        env = {**os.environ}
-        for var in _PASS_THROUGH_VARS:
-            val = os.environ.get(var)
-            if val:
-                env[var] = val
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                _SYNC_SCRIPT,
-                "--config",
-                _SYNC_CONFIG,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env=env,
-            )
-            stdout, _ = await proc.communicate()
-            output = stdout.decode(errors="replace").strip()
-            last_lines = "\n".join(output.splitlines()[-5:]) if output else ""
-
-            new_state = {
-                "last_sync_time": datetime.now(timezone.utc).isoformat(),
-                "status": "success" if proc.returncode == 0 else "error",
-                "message": last_lines,
-                "is_syncing": False,
+    async def run_sync(self) -> None:
+        async with self._lock:
+            self._state = {
+                "status": "running",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "finished_at": None,
+                "last_lines": [],
+                "exit_code": None,
             }
-        except Exception as exc:
-            new_state = {
-                "last_sync_time": datetime.now(timezone.utc).isoformat(),
-                "status": "error",
-                "message": str(exc),
-                "is_syncing": False,
-            }
+            self._save_state()
 
-        _write_state(new_state)
+            tmp_dir = tempfile.mkdtemp(prefix="jira-sync-run-")
+            try:
+                jira_env = dotenv_values(settings.jira_sync_dotenv)
+                proc = await asyncio.create_subprocess_exec(
+                    *settings.jira_sync_cmd,
+                    cwd=tmp_dir,
+                    stdout=PIPE,
+                    stderr=STDOUT,
+                    env={**jira_env, **os.environ, "PYTHONUNBUFFERED": "1"},
+                )
+
+                buffer: list[str] = []
+                async for raw_line in proc.stdout:
+                    line = raw_line.decode(errors="replace").rstrip()
+                    buffer.append(line)
+                    if len(buffer) > settings.log_tail_lines:
+                        buffer.pop(0)
+
+                await proc.wait()
+
+                self._state["status"] = "success" if proc.returncode == 0 else "error"
+                self._state["exit_code"] = proc.returncode
+                self._state["finished_at"] = datetime.now(timezone.utc).isoformat()
+                self._state["last_lines"] = buffer
+            except Exception as e:
+                self._state["status"] = "error"
+                self._state["finished_at"] = datetime.now(timezone.utc).isoformat()
+                self._state["last_lines"].append(f"[오류] {e}")
+            finally:
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                self._save_state()
+
+
+sync_runner = SyncRunner()

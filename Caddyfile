@@ -1,0 +1,3 @@
+{$DOMAIN} {
+    reverse_proxy jira-sync-server:{$APP_PORT}
+}
