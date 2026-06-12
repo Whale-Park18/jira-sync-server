@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import tempfile
 from asyncio.subprocess import PIPE, STDOUT
 from datetime import datetime, timezone
@@ -16,6 +17,22 @@ _DEFAULT_STATE = {
     "last_lines": [],
     "exit_code": None,
 }
+
+_LOG_LINE_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ \| (\w+)\s*\| \S+ - (?:\[([A-Z][A-Z0-9]*-\d+)\] )?(.+)$"
+)
+
+
+def _format_log_line(raw_line: str) -> str | None:
+    match = _LOG_LINE_RE.match(raw_line)
+    if not match:
+        return None
+    timestamp, level, issue_key, message = match.groups()
+    if issue_key and message.startswith("Notion"):
+        return f"{timestamp} {issue_key} {message}"
+    if level == "ERROR":
+        return f"{timestamp} [오류] {message}"
+    return None
 
 
 class SyncRunner:
@@ -74,19 +91,22 @@ class SyncRunner:
                     env={**jira_env, **os.environ, "PYTHONUNBUFFERED": "1"},
                 )
 
-                buffer: list[str] = []
                 async for raw_line in proc.stdout:
                     line = raw_line.decode(errors="replace").rstrip()
-                    buffer.append(line)
-                    if len(buffer) > settings.log_tail_lines:
-                        buffer.pop(0)
+                    formatted = _format_log_line(line)
+                    if formatted is None:
+                        continue
+                    last_lines = self._state["last_lines"]
+                    last_lines.append(formatted)
+                    if len(last_lines) > settings.log_tail_lines:
+                        last_lines.pop(0)
+                    self._save_state()
 
                 await proc.wait()
 
                 self._state["status"] = "success" if proc.returncode == 0 else "error"
                 self._state["exit_code"] = proc.returncode
                 self._state["finished_at"] = datetime.now(timezone.utc).isoformat()
-                self._state["last_lines"] = buffer
             except Exception as e:
                 self._state["status"] = "error"
                 self._state["finished_at"] = datetime.now(timezone.utc).isoformat()

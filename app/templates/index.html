@@ -191,12 +191,15 @@ header h1 { font-size: 1.25rem; font-weight: 600; }
       btn.classList.remove('is-running');
     }
 
+    const logSection = document.getElementById('logSection');
+    const logBox = document.getElementById('logBox');
     if (data.last_lines && data.last_lines.length > 0) {
-      const logSection = document.getElementById('logSection');
-      const logBox = document.getElementById('logBox');
       logSection.style.display = '';
       logBox.textContent = data.last_lines.join('\n');
       logBox.scrollTop = logBox.scrollHeight;
+    } else {
+      logSection.style.display = 'none';
+      logBox.textContent = '';
     }
 
     const meta = document.getElementById('lastSync');
