@@ -6,7 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN apt-get update && apt-get install -y --no-install-recommends git \
-    && pip install --no-cache-dir git+https://github.com/Whale-Park18/jira-sync.git@master \
+    && pip install --no-cache-dir git+https://github.com/Whale-Park18/jira-sync.git@344c0c076aae6faa085bcdb787eab8de00d79c94 \
     && apt-get purge -y git && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 COPY app/ ./app/

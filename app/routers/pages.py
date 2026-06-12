@@ -2,7 +2,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.auth import check_password, delete_session_cookie, is_authenticated, sign_session_cookie
+from app.auth import check_password, delete_session_cookie, is_authenticated, revoke_session, sign_session_cookie
 from app.runner import sync_runner
 
 router = APIRouter()
@@ -40,6 +40,7 @@ async def login(request: Request, password: str = Form(...)):
 
 @router.post("/logout")
 async def logout(request: Request):
+    revoke_session(request)
     response = RedirectResponse(url="/login", status_code=303)
     delete_session_cookie(response)
     return response

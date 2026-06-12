@@ -19,6 +19,7 @@ class Settings:
         self.jira_sync_cmd: list[str] = ["sync", "--config", self.jira_sync_config]
         self.state_file_path: str = os.environ.get("STATE_FILE_PATH", "/data/state.json")
         self.log_tail_lines: int = int(os.environ.get("LOG_TAIL_LINES", "50"))
+        self.environment: str = os.environ.get("ENVIRONMENT", "production")
 
 
 settings = Settings()
